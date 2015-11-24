@@ -2,11 +2,11 @@
  * angular-mm-foundation
  * http://pineconellc.github.io/angular-foundation/
 
- * Version: 0.3.1 - 2014-08-19
+ * Version: 0.8.0 - 2015-10-13
  * License: MIT
  * (c) Pinecone, LLC
  */
-angular.module("mm.foundation", ["mm.foundation.accordion","mm.foundation.alert","mm.foundation.bindHtml","mm.foundation.buttons","mm.foundation.position","mm.foundation.dropdownToggle","mm.foundation.interchange","mm.foundation.transition","mm.foundation.modal","mm.foundation.offcanvas","mm.foundation.pagination","mm.foundation.tooltip","mm.foundation.popover","mm.foundation.progressbar","mm.foundation.rating","mm.foundation.tabs","mm.foundation.topbar","mm.foundation.tour","mm.foundation.typeahead"]);
+angular.module("mm.foundation", ["mm.foundation.accordion","mm.foundation.alert","mm.foundation.bindHtml","mm.foundation.buttons","mm.foundation.position","mm.foundation.mediaQueries","mm.foundation.dropdownToggle","mm.foundation.interchange","mm.foundation.transition","mm.foundation.modal","mm.foundation.offcanvas","mm.foundation.pagination","mm.foundation.tooltip","mm.foundation.popover","mm.foundation.progressbar","mm.foundation.rating","mm.foundation.tabs","mm.foundation.topbar","mm.foundation.tour","mm.foundation.typeahead"]);
 angular.module('mm.foundation.accordion', [])
 
 .constant('accordionConfig', {
@@ -29,7 +29,7 @@ angular.module('mm.foundation.accordion', [])
       });
     }
   };
-  
+
   // This is called from the accordion-group directive to add itself to the accordion
   this.addGroup = function(groupScope) {
     var that = this;
@@ -44,7 +44,7 @@ angular.module('mm.foundation.accordion', [])
   this.removeGroup = function(group) {
     var index = this.groups.indexOf(group);
     if ( index !== -1 ) {
-      this.groups.splice(this.groups.indexOf(group), 1);
+      this.groups.splice(index, 1);
     }
   };
 
@@ -82,7 +82,7 @@ angular.module('mm.foundation.accordion', [])
       accordionCtrl.addGroup(scope);
 
       scope.isOpen = false;
-      
+
       if ( attrs.isOpen ) {
         getIsOpen = $parse(attrs.isOpen);
         setIsOpen = getIsOpen.assign;
@@ -149,7 +149,7 @@ angular.module('mm.foundation.accordion', [])
 angular.module("mm.foundation.alert", [])
 
 .controller('AlertController', ['$scope', '$attrs', function ($scope, $attrs) {
-  $scope.closeable = 'close' in $attrs;
+  $scope.closeable = 'close' in $attrs && typeof $attrs.close !== "undefined";
 }])
 
 .directive('alert', function () {
@@ -228,7 +228,7 @@ angular.module('mm.foundation.buttons', [])
       function getFalseValue() {
         return getCheckboxValue(attrs.btnCheckboxFalse, false);
       }
-      
+
       function getCheckboxValue(attributeValue, defaultValue) {
         var val = scope.$eval(attributeValue);
         return angular.isDefined(val) ? val : defaultValue;
@@ -331,6 +331,66 @@ angular.module('mm.foundation.position', [])
     };
   }]);
 
+angular.module("mm.foundation.mediaQueries", [])
+    .factory('matchMedia', ['$document', '$window', function($document, $window) {
+        // MatchMedia for IE <= 9
+        return $window.matchMedia || (function matchMedia(doc, undefined){
+            var bool,
+                docElem = doc.documentElement,
+                refNode = docElem.firstElementChild || docElem.firstChild,
+                // fakeBody required for <FF4 when executed in <head>
+                fakeBody = doc.createElement("body"),
+                div = doc.createElement("div");
+
+            div.id = "mq-test-1";
+            div.style.cssText = "position:absolute;top:-100em";
+            fakeBody.style.background = "none";
+            fakeBody.appendChild(div);
+
+            return function (q) {
+                div.innerHTML = "&shy;<style media=\"" + q + "\"> #mq-test-1 { width: 42px; }</style>";
+                docElem.insertBefore(fakeBody, refNode);
+                bool = div.offsetWidth === 42;
+                docElem.removeChild(fakeBody);
+                return {
+                    matches: bool,
+                    media: q
+                };
+            };
+
+        }($document[0]));
+    }])
+    .factory('mediaQueries', ['$document', 'matchMedia', function($document, matchMedia) {
+        var head = angular.element($document[0].querySelector('head'));
+        head.append('<meta class="foundation-mq-topbar" />');
+        head.append('<meta class="foundation-mq-small" />');
+        head.append('<meta class="foundation-mq-medium" />');
+        head.append('<meta class="foundation-mq-large" />');
+
+        var regex = /^[\/\\'"]+|(;\s?})+|[\/\\'"]+$/g;
+        var queries = {
+            topbar: getComputedStyle(head[0].querySelector('meta.foundation-mq-topbar')).fontFamily.replace(regex, ''),
+            small : getComputedStyle(head[0].querySelector('meta.foundation-mq-small')).fontFamily.replace(regex, ''),
+            medium : getComputedStyle(head[0].querySelector('meta.foundation-mq-medium')).fontFamily.replace(regex, ''),
+            large : getComputedStyle(head[0].querySelector('meta.foundation-mq-large')).fontFamily.replace(regex, '')
+        };
+
+        return {
+            topbarBreakpoint: function () {
+                return !matchMedia(queries.topbar).matches;
+            },
+            small: function () {
+                return matchMedia(queries.small).matches;
+            },
+            medium: function () {
+                return matchMedia(queries.medium).matches;
+            },
+            large: function () {
+                return matchMedia(queries.large).matches;
+            }
+        };
+    }]);
+
 /*
  * dropdownToggle - Provides dropdown menu functionality
  * @restrict class or attribute
@@ -343,22 +403,30 @@ angular.module('mm.foundation.position', [])
      </li>
    </ul>
  */
-angular.module('mm.foundation.dropdownToggle', [ 'mm.foundation.position' ])
+angular.module('mm.foundation.dropdownToggle', [ 'mm.foundation.position', 'mm.foundation.mediaQueries' ])
 
-.directive('dropdownToggle', ['$document', '$location', '$position', function ($document, $location, $position) {
+.controller('DropdownToggleController', ['$scope', '$attrs', 'mediaQueries', function($scope, $attrs, mediaQueries) {
+  this.small = function() {
+    return mediaQueries.small() && !mediaQueries.medium();
+  };
+}])
+
+.directive('dropdownToggle', ['$document', '$window', '$location', '$position', function ($document, $window, $location, $position) {
   var openElement = null,
       closeMenu   = angular.noop;
   return {
     restrict: 'CA',
-    scope: {
-      dropdownToggle: '@'
-    },
-    link: function(scope, element, attrs) {
-      var dropdown = angular.element($document[0].querySelector(scope.dropdownToggle));
+    controller: 'DropdownToggleController',
+    link: function(scope, element, attrs, controller) {
+      var parent = element.parent(),
+          dropdown = angular.element($document[0].querySelector(attrs.dropdownToggle));
 
-      scope.$watch('$location.path', function() { closeMenu(); });
-      element.bind('click', function (event) {
-        dropdown = angular.element($document[0].querySelector(scope.dropdownToggle));
+      var parentHasDropdown = function() {
+        return parent.hasClass('has-dropdown');
+      };
+
+      var onClick = function (event) {
+        dropdown = angular.element($document[0].querySelector(attrs.dropdownToggle));
         var elementWasOpen = (element === openElement);
 
         event.preventDefault();
@@ -369,30 +437,68 @@ angular.module('mm.foundation.dropdownToggle', [ 'mm.foundation.position' ])
         }
 
         if (!elementWasOpen && !element.hasClass('disabled') && !element.prop('disabled')) {
-          dropdown.css('display', 'block');
+          dropdown.css('display', 'block'); // We display the element so that offsetParent is populated
+          dropdown.addClass('f-open-dropdown');
 
           var offset = $position.offset(element);
           var parentOffset = $position.offset(angular.element(dropdown[0].offsetParent));
-
-          dropdown.css({
-            left: offset.left - parentOffset.left + 'px',
+          var dropdownWidth = dropdown.prop('offsetWidth');
+          var css = {
             top: offset.top - parentOffset.top + offset.height + 'px'
-          });
+          };
+
+          if (controller.small()) {
+            css.left = Math.max((parentOffset.width - dropdownWidth) / 2, 8) + 'px';
+            css.position = 'absolute';
+            css.width = '95%';
+            css['max-width'] = 'none';
+          }
+          else {
+            var left = Math.round(offset.left - parentOffset.left);
+            var rightThreshold = $window.innerWidth - dropdownWidth - 8;
+            if (left > rightThreshold) {
+                left = rightThreshold;
+                dropdown.removeClass('left').addClass('right');
+            }
+            css.left = left + 'px';
+            css.position = null;
+            css['max-width'] = null;
+          }
+
+          dropdown.css(css);
+          element.addClass('expanded');
+
+          if (parentHasDropdown()) {
+            parent.addClass('hover');
+          }
 
           openElement = element;
+
           closeMenu = function (event) {
-            $document.unbind('click', closeMenu);
+            $document.off('click', closeMenu);
             dropdown.css('display', 'none');
+            dropdown.removeClass('f-open-dropdown');
+            element.removeClass('expanded');
             closeMenu = angular.noop;
             openElement = null;
+            if (parent.hasClass('hover')) {
+              parent.removeClass('hover');
+            }
           };
-          $document.bind('click', closeMenu);
+          $document.on('click', closeMenu);
         }
-      });
+      };
 
       if (dropdown) {
         dropdown.css('display', 'none');
       }
+
+      scope.$watch('$location.path', function() { closeMenu(); });
+
+      element.on('click', onClick);
+      element.on('$destroy', function() {
+        element.off('click', onClick);
+      });
     }
   };
 }]);
@@ -405,7 +511,7 @@ angular.module('mm.foundation.dropdownToggle', [ 'mm.foundation.position' ])
  * Package containing all services and directives
  * about the `interchange` module
  */
-angular.module('mm.foundation.interchange', [])
+angular.module('mm.foundation.interchange', ['mm.foundation.mediaQueries'])
 
   /**
    * @ngdoc function
@@ -491,7 +597,7 @@ angular.module('mm.foundation.interchange', [])
    *
    * Tools to help with the `interchange` module.
    */
-  .factory('interchangeTools', ['$window', 'interchangeQueries', function ($window, namedQueries) {
+  .factory('interchangeTools', ['$window', 'matchMedia', 'interchangeQueries', function ($window, matchMedia, namedQueries) {
 
     /**
      * @ngdoc method
@@ -555,7 +661,7 @@ angular.module('mm.foundation.interchange', [])
       var file, media, match;
       for (file in files) {
         media = namedQueries[file] || file;
-        match = $window.matchMedia(media);
+        match = matchMedia(media);
         if (match.matches) {
           return files[file];
         }
@@ -876,12 +982,12 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
     };
   }])
 
-  .factory('$modalStack', ['$transition', '$timeout', '$document', '$compile', '$rootScope', '$$stackedMap',
-    function ($transition, $timeout, $document, $compile, $rootScope, $$stackedMap) {
+  .factory('$modalStack', ['$window', '$transition', '$timeout', '$document', '$compile', '$rootScope', '$$stackedMap',
+    function ($window, $transition, $timeout, $document, $compile, $rootScope, $$stackedMap) {
 
       var OPENED_MODAL_CLASS = 'modal-open';
 
-      var backdropDomEl, backdropScope;
+      var backdropDomEl, backdropScope, cssTop;
       var openedWindows = $$stackedMap.createNew();
       var $modalStack = {};
 
@@ -903,16 +1009,18 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
       });
 
       function removeModalWindow(modalInstance) {
-
-        var body = $document.find('body').eq(0);
+        var parent = $document.find(modalInstance.options.parent).eq(0);
         var modalWindow = openedWindows.get(modalInstance).value;
 
         //clean up the stack
         openedWindows.remove(modalInstance);
 
         //remove window DOM element
-        removeAfterAnimate(modalWindow.modalDomEl, modalWindow.modalScope, 300, checkRemoveBackdrop);
-        body.toggleClass(OPENED_MODAL_CLASS, openedWindows.length() > 0);
+        removeAfterAnimate(modalWindow.modalDomEl, modalWindow.modalScope, 300, function() {
+          modalWindow.modalScope.$destroy();
+          parent.toggleClass(OPENED_MODAL_CLASS, openedWindows.length() > 0);
+          checkRemoveBackdrop();
+        });
       }
 
       function checkRemoveBackdrop() {
@@ -960,6 +1068,14 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
         }
       }
 
+      function calculateModalTop(modalElement, offset) {
+        if (angular.isUndefined(offset)) {
+          offset = 0;
+        }
+        var scrollY = $window.pageYOffset || 0;
+        return offset + scrollY;
+      }
+
       $document.bind('keydown', function (evt) {
         var modal;
 
@@ -974,48 +1090,68 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
       });
 
       $modalStack.open = function (modalInstance, modal) {
-
-        openedWindows.add(modalInstance, {
+        modalInstance.options = {
           deferred: modal.deferred,
           modalScope: modal.scope,
           backdrop: modal.backdrop,
-          keyboard: modal.keyboard
-        });
+          keyboard: modal.keyboard,
+          parent: modal.parent
+        };
+        openedWindows.add(modalInstance, modalInstance.options);
 
-        var body = $document.find('body').eq(0),
+        var parent = $document.find(modal.parent).eq(0),
             currBackdropIndex = backdropIndex();
 
         if (currBackdropIndex >= 0 && !backdropDomEl) {
           backdropScope = $rootScope.$new(true);
           backdropScope.index = currBackdropIndex;
           backdropDomEl = $compile('<div modal-backdrop></div>')(backdropScope);
-          body.append(backdropDomEl);
+          parent.append(backdropDomEl);
         }
-          
-        var angularDomEl = angular.element('<div modal-window></div>');
-        angularDomEl.attr('window-class', modal.windowClass);
-        angularDomEl.attr('index', openedWindows.length() - 1);
-        angularDomEl.attr('animate', 'animate');
+
+        // Create a faux modal div just to measure its
+        // distance to top
+        var faux = angular.element('<div class="reveal-modal" style="z-index:-1""></div>');
+        parent.append(faux[0]);
+        cssTop = parseInt($window.getComputedStyle(faux[0]).top) || 0;
+        var openAt = calculateModalTop(faux, cssTop);
+        faux.remove();
+
+        var angularDomEl = angular.element('<div modal-window style="visibility: visible; top:' + openAt +'px;"></div>')
+          .attr({
+            'window-class': modal.windowClass,
+            'index': openedWindows.length() - 1,
+            'animate': 'animate'
+          });
         angularDomEl.html(modal.content);
 
         var modalDomEl = $compile(angularDomEl)(modal.scope);
         openedWindows.top().value.modalDomEl = modalDomEl;
-        body.append(modalDomEl);
-        body.addClass(OPENED_MODAL_CLASS);
+        parent.append(modalDomEl);
+        parent.addClass(OPENED_MODAL_CLASS);
+      };
+
+      $modalStack.reposition = function (modalInstance) {
+        var modalWindow = openedWindows.get(modalInstance).value;
+        if (modalWindow) {
+          var modalDomEl = modalWindow.modalDomEl;
+          var top = calculateModalTop(modalDomEl, cssTop);
+          modalDomEl.css('top', top + "px");
+        }
       };
 
       $modalStack.close = function (modalInstance, result) {
-        var modalWindow = openedWindows.get(modalInstance).value;
+        var modalWindow = openedWindows.get(modalInstance);
         if (modalWindow) {
-          modalWindow.deferred.resolve(result);
+          modalWindow.value.deferred.resolve(result);
           removeModalWindow(modalInstance);
         }
       };
 
       $modalStack.dismiss = function (modalInstance, reason) {
-        var modalWindow = openedWindows.get(modalInstance).value;
+        var modalWindow = openedWindows.get(modalInstance);
         if (modalWindow) {
-          modalWindow.deferred.reject(reason);
+          modalWindow.value.deferred.reject(reason);
           removeModalWindow(modalInstance);
         }
       };
@@ -1078,6 +1214,9 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
               },
               dismiss: function (reason) {
                 $modalStack.dismiss(modalInstance, reason);
+              },
+              reposition: function () {
+                $modalStack.reposition(modalInstance);
               }
             };
 
@@ -1112,6 +1251,9 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
                 });
 
                 ctrlInstance = $controller(modalOptions.controller, ctrlLocals);
+                if (modalOptions.controllerAs) {
+                  modalScope[modalOptions.controllerAs] = ctrlInstance;
+                }
               }
 
               $modalStack.open(modalInstance, {
@@ -1120,7 +1262,8 @@ angular.module('mm.foundation.modal', ['mm.foundation.transition'])
                 content: tplAndVars[0],
                 backdrop: modalOptions.backdrop,
                 keyboard: modalOptions.keyboard,
-                windowClass: modalOptions.windowClass
+                windowClass: modalOptions.windowClass,
+                parent: modalOptions.parent || 'body'
               });
 
             }, function resolveError(reason) {
@@ -1495,7 +1638,7 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
 
   // The options specified to the provider globally.
   var globalOptions = {};
-  
+
   /**
    * `options({})` allows global configuration of all tooltips in the
    * application.
@@ -1505,9 +1648,9 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
    *     $tooltipProvider.options( { placement: 'left' } );
    *   });
    */
-	this.options = function( value ) {
-		angular.extend( globalOptions, value );
-	};
+  this.options = function( value ) {
+    angular.extend( globalOptions, value );
+  };
 
   /**
    * This allows you to extend the set of trigger mappings available. E.g.:
@@ -1564,7 +1707,7 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
 
       var startSym = $interpolate.startSymbol();
       var endSym = $interpolate.endSymbol();
-      var template = 
+      var template =
         '<div '+ directiveName +'-popup '+
           'title="'+startSym+'tt_title'+endSym+'" '+
           'content="'+startSym+'tt_content'+endSym+'" '+
@@ -1689,7 +1832,7 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
               // Set the initial positioning.
               tooltip.css({ top: 0, left: 0, display: 'block' });
 
-              // Now we add it to the DOM because need some info about it. But it's not 
+              // Now we add it to the DOM because need some info about it. But it's not
               // visible yet anyway.
               if ( appendToBody ) {
                   $document.find( 'body' ).append( tooltip );
@@ -1716,7 +1859,7 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
               //if tooltip is going to be shown after delay, we must cancel this
               $timeout.cancel( popupTimeout );
 
-              // And now we remove it from the DOM. However, if we have animation, we 
+              // And now we remove it from the DOM. However, if we have animation, we
               // need to wait for it to expire beforehand.
               // FIXME: this is a placeholder for a port of the transitions library.
               if ( scope.tt_animation ) {
@@ -1759,9 +1902,13 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
               scope.tt_title = val;
             });
 
+            attrs[prefix+'Placement'] = attrs[prefix+'Placement'] || null;
+
             attrs.$observe( prefix+'Placement', function ( val ) {
-              scope.tt_placement = angular.isDefined( val ) ? val : options.placement;
+              scope.tt_placement = angular.isDefined( val ) && val ? val : options.placement;
             });
+
+            attrs[prefix+'PopupDelay'] = attrs[prefix+'PopupDelay'] || null;
 
             attrs.$observe( prefix+'PopupDelay', function ( val ) {
               var delay = parseInt( val, 10 );
@@ -1769,13 +1916,19 @@ angular.module( 'mm.foundation.tooltip', [ 'mm.foundation.position', 'mm.foundat
             });
 
             var unregisterTriggers = function() {
-              if (hasRegisteredTriggers) {
-                element.unbind( triggers.show, showTooltipBind );
-                element.unbind( triggers.hide, hideTooltipBind );
+              if ( hasRegisteredTriggers ) {
+                if ( angular.isFunction( triggers.show ) ) {
+                  unregisterTriggerFunction();
+                } else {
+                  element.unbind( triggers.show, showTooltipBind );
+                  element.unbind( triggers.hide, hideTooltipBind );
+                }
               }
             };
 
             var unregisterTriggerFunction = function () {};
+
+            attrs[prefix+'Trigger'] = attrs[prefix+'Trigger'] || null;
 
             attrs.$observe( prefix+'Trigger', function ( val ) {
               unregisterTriggers();
@@ -2069,6 +2222,8 @@ angular.module('mm.foundation.tabs', [])
   var ctrl = this,
       tabs = ctrl.tabs = $scope.tabs = [];
 
+  if (angular.isUndefined($scope.openOnLoad)) { $scope.openOnLoad = true; }
+
   ctrl.select = function(tab) {
     angular.forEach(tabs, function(tab) {
       tab.active = false;
@@ -2078,7 +2233,7 @@ angular.module('mm.foundation.tabs', [])
 
   ctrl.addTab = function addTab(tab) {
     tabs.push(tab);
-    if (tabs.length === 1 || tab.active) {
+    if ($scope.openOnLoad && (tabs.length === 1 || tab.active)) {
       ctrl.select(tab);
     }
   };
@@ -2130,7 +2285,9 @@ angular.module('mm.foundation.tabs', [])
     restrict: 'EA',
     transclude: true,
     replace: true,
-    scope: {},
+    scope: {
+      openOnLoad: '=?'
+    },
     controller: 'TabsetController',
     templateUrl: 'template/tabs/tabset.html',
     link: function(scope, element, attrs) {
@@ -2257,6 +2414,9 @@ angular.module('mm.foundation.tabs', [])
         }
 
         scope.$watch('active', function(active) {
+          if( !angular.isFunction(setActive) ){
+            return;
+          }
           // Note this watcher also initializes and assigns scope.active to the
           // attrs.active expression.
           setActive(scope.$parent, active);
@@ -2343,508 +2503,462 @@ angular.module('mm.foundation.tabs', [])
 
 ;
 
+angular.module("mm.foundation.topbar", ['mm.foundation.mediaQueries'])
+.factory('closest', [function() {
+  return function(el, selector) {
+    var matchesSelector = function (node, selector) {
+      var nodes = (node.parentNode || node.document).querySelectorAll(selector);
+      var i = -1;
+      while (nodes[++i] && nodes[i] != node){}
+      return !!nodes[i];
+    };
 
-angular.module("mm.foundation.topbar", [])
-    .factory('mediaQueries', ['$document', '$window', function($document, $window){
-        var head = angular.element($document[0].querySelector('head'));
-        head.append('<meta class="foundation-mq-topbar" />');
-        head.append('<meta class="foundation-mq-small" />');
-        head.append('<meta class="foundation-mq-medium" />');
-        head.append('<meta class="foundation-mq-large" />');
+    var element = el[0];
+    while (element) {
+      if (matchesSelector(element, selector)) {
+        return angular.element(element);
+      } else {
+        element = element.parentElement;
+      }
+    }
+    return false;
+  };
+}])
+.directive('topBar', ['$timeout','$compile', '$window', '$document', 'mediaQueries',
+  function($timeout, $compile, $window, $document, mediaQueries) {
+    return {
+      scope: {
+        stickyClass : '@',
+        backText: '@',
+        stickyOn : '=',
+        customBackText: '=',
+        isHover: '=',
+        mobileShowParentLink: '=',
+        scrolltop : '=',
+      },
+      restrict: 'EA',
+      replace: true,
+      templateUrl: 'template/topbar/top-bar.html',
+      transclude: true,
+      controller: ['$window', '$scope', 'closest', function($window, $scope, closest) {
+        $scope.settings = {};
+        $scope.settings.stickyClass = $scope.stickyClass || 'sticky';
+        $scope.settings.backText = $scope.backText || 'Back';
+        $scope.settings.stickyOn = $scope.stickyOn || 'all';
 
-        // MatchMedia for IE <= 9
-        var matchMedia = $window.matchMedia || (function(doc, undefined){
-            var bool,
-                docElem = doc.documentElement,
-                refNode = docElem.firstElementChild || docElem.firstChild,
-                // fakeBody required for <FF4 when executed in <head>
-                fakeBody = doc.createElement("body"),
-                div = doc.createElement("div");
+        $scope.settings.customBackText = $scope.customBackText === undefined ? true : $scope.customBackText;
+        $scope.settings.isHover = $scope.isHover === undefined ? true : $scope.isHover;
+        $scope.settings.mobileShowParentLink = $scope.mobileShowParentLink === undefined ? true : $scope.mobileShowParentLink;
+        $scope.settings.scrolltop = $scope.scrolltop === undefined ? true : $scope.scrolltop; // jump to top when sticky nav menu toggle is clicked
 
-            div.id = "mq-test-1";
-            div.style.cssText = "position:absolute;top:-100em";
-            fakeBody.style.background = "none";
-            fakeBody.appendChild(div);
+        this.settings = $scope.settings;
 
-            return function (q) {
-                div.innerHTML = "&shy;<style media=\"" + q + "\"> #mq-test-1 { width: 42px; }</style>";
-                docElem.insertBefore(fakeBody, refNode);
-                bool = div.offsetWidth === 42;
-                docElem.removeChild(fakeBody);
-                return {
-                    matches: bool,
-                    media: q
-                };
-            };
+        $scope.index = 0;
 
-        }($document[0]));
+        var outerHeight = function(el) {
+          var height = el.offsetHeight;
+          var style = el.currentStyle || getComputedStyle(el);
 
-        var regex = /^[\/\\'"]+|(;\s?})+|[\/\\'"]+$/g;
-        var queries = {
-            topbar: getComputedStyle(head[0].querySelector('meta.foundation-mq-topbar')).fontFamily.replace(regex, ''),
-            small : getComputedStyle(head[0].querySelector('meta.foundation-mq-small')).fontFamily.replace(regex, ''),
-            medium : getComputedStyle(head[0].querySelector('meta.foundation-mq-medium')).fontFamily.replace(regex, ''),
-            large : getComputedStyle(head[0].querySelector('meta.foundation-mq-large')).fontFamily.replace(regex, '')
+          height += parseInt(style.marginTop, 10) + parseInt(style.marginBottom, 10);
+          return height;
         };
 
-        return {
-            topbarBreakpoint: function () {
-                return !matchMedia(queries.topbar).matches;
-            },
-            small: function () {
-                return matchMedia(queries.small).matches;
-            },
-            medium: function () {
-                return matchMedia(queries.medium).matches;
-            },
-            large: function () {
-                return matchMedia(queries.large).matches;
-            }
+
+        var sections = [];
+
+        this.addSection = function(section) {
+          sections.push(section);
         };
 
-    }])
-    .factory('closest', [function(){
-        return function(el, selector) {
-            var matchesSelector = function (node, selector) {
-                var nodes = (node.parentNode || node.document).querySelectorAll(selector);
-                var i = -1;
-                while (nodes[++i] && nodes[i] != node){}
-                return !!nodes[i];
-            };
+        this.removeSection = function(section) {
+          var index = sections.indexOf(section);
+          if (index > -1) {
+            sections.splice(index, 1);
+          }
+        };
 
-            var element = el[0];
-            while (element) {
-                if (matchesSelector(element, selector)) {
-                    return angular.element(element);
-                } else {
-                    element = element.parentElement;
-                }
-            }
+        var dir = /rtl/i.test($document.find('html').attr('dir')) ? 'right' : 'left';
+
+        $scope.$watch('index', function(index) {
+          for(var i = 0; i < sections.length; i++){
+            sections[i].move(dir, index);
+          }
+        });
+
+        this.toggle = function(on) {
+          $scope.toggle(on);
+          for(var i = 0; i < sections.length; i++){
+            sections[i].reset();
+          }
+          $scope.index = 0;
+          $scope.height = '';
+          $scope.$apply();
+        };
+
+        this.back = function(event) {
+          if($scope.index < 1 || !mediaQueries.topbarBreakpoint()){
+            return;
+          }
+
+          var $link = angular.element(event.currentTarget);
+          var $movedLi = closest($link, 'li.moved');
+          var $previousLevelUl = $movedLi.parent();
+          $scope.index = $scope.index -1;
+
+          if($scope.index === 0){
+            $scope.height = '';
+          } else {
+            $scope.height = $scope.originalHeight + outerHeight($previousLevelUl[0]);
+          }
+
+          $timeout(function() {
+            $movedLi.removeClass('moved');
+          }, 300);
+        };
+
+        this.forward = function(event) {
+          if(!mediaQueries.topbarBreakpoint()){
             return false;
+          }
+
+          var $link = angular.element(event.currentTarget);
+          var $selectedLi = closest($link, 'li');
+          $selectedLi.addClass('moved');
+          $scope.height = $scope.originalHeight + outerHeight($link.parent()[0].querySelector('ul'));
+          $scope.index = $scope.index + 1;
+          $scope.$apply();
         };
-    }])
-    .directive('topBar', ['$timeout','$compile', '$window', '$document', 'mediaQueries',
-            function ($timeout, $compile, $window, $document, mediaQueries) {
-        return {
-            scope: {
-                stickyClass : '@',
-                backText: '@',
-                stickyOn : '=',
-                customBackText: '=',
-                isHover: '=',
-                mobileShowParentLink: '=',
-                scrolltop : '=',
-            },
-            restrict: 'EA',
-            replace: true,
-            templateUrl: 'template/topbar/top-bar.html',
-            transclude: true,
-            link: function ($scope, element, attrs) {
-                var topbar = $scope.topbar = element;
-                var topbarContainer = topbar.parent();
-                var body = angular.element($document[0].querySelector('body'));
 
-                var isSticky = $scope.isSticky = function () {
-                    var sticky = topbarContainer.hasClass($scope.settings.stickyClass);
-                    if (sticky && $scope.settings.stickyOn === 'all') {
-                        return true;
-                    } else if (sticky && mediaQueries.small() && $scope.settings.stickyOn === 'small') {
-                        return true;
-                    } else if (sticky && mediaQueries.medium() && $scope.settings.stickyOn === 'medium') {
-                        return true;
-                    } else if (sticky && mediaQueries.large() && $scope.settings.stickyOn === 'large') {
-                        return true;
-                    }
-                    return false;
-                };
+      }],
+      link: function(scope, element, attrs) {
+        var topbar = scope.topbar = element;
+        var topbarContainer = topbar.parent();
+        var body = angular.element($document[0].querySelector('body'));
+        var lastBreakpoint = mediaQueries.topbarBreakpoint();
 
-                var updateStickyPositioning = function(){
-                    if (!$scope.stickyTopbar || !$scope.isSticky()) {
-                        return;
-                    }
-
-                    var $class = angular.element($document[0].querySelector('.' + $scope.settings.stickyClass));
-                    var distance = stickyoffset;
-
-                    if ($window.scrollY > distance && !$class.hasClass('fixed')) {
-                        $class.addClass('fixed');
-                        body.css('padding-top', $scope.originalHeight + 'px');
-                    } else if ($window.scrollY <= distance && $class.hasClass('fixed')) {
-                        $class.removeClass('fixed');
-                        body.css('padding-top', '');
-                    }
-                };
-
-                $scope.toggle = function(on) {
-                    if(!mediaQueries.topbarBreakpoint()){
-                        return false;
-                    }
-
-                    var expand = (on === undefined) ? !topbar.hasClass('expanded') : on;
-
-                    if (expand){
-                        topbar.addClass('expanded');
-                    }
-                    else {
-                        topbar.removeClass('expanded');
-                    }
-
-                    if ($scope.settings.scrolltop) {
-                        if (!expand && topbar.hasClass('fixed')) {
-                            topbar.parent().addClass('fixed');
-                            topbar.removeClass('fixed');
-                            body.css('padding-top', $scope.originalHeight + 'px');
-                        } else if (expand && topbar.parent().hasClass('fixed')) {
-                            topbar.parent().removeClass('fixed');
-                            topbar.addClass('fixed');
-                            body.css('padding-top', '');
-                            $window.scrollTo(0,0);
-                        }
-                    } else {
-                        if(isSticky()) {
-                            topbar.parent().addClass('fixed');
-                        }
-
-                        if(topbar.parent().hasClass('fixed')) {
-                            if (!expand) {
-                                topbar.removeClass('fixed');
-                                topbar.parent().removeClass('expanded');
-                                updateStickyPositioning();
-                            } else {
-                                topbar.addClass('fixed');
-                                topbar.parent().addClass('expanded');
-                                body.css('padding-top', $scope.originalHeight + 'px');
-                            }
-                        }
-                    }
-                };
-
-                if(topbarContainer.hasClass('fixed') || isSticky() ) {
-                    $scope.stickyTopbar = true;
-                    $scope.height = topbarContainer[0].offsetHeight;
-                    var stickyoffset = topbarContainer[0].getBoundingClientRect().top;
-                } else {
-                    $scope.height = topbar[0].offsetHeight;
-                }
-
-                $scope.originalHeight = $scope.height;
-
-                $scope.$watch('height', function(h){
-                    if(h){
-                        topbar.css('height', h + 'px');
-                    } else {
-                        topbar.css('height', '');
-                    }
-                });
-
-                var lastBreakpoint = mediaQueries.topbarBreakpoint();             
-
-                angular.element($window).bind('resize', function(){
-                    var currentBreakpoint = mediaQueries.topbarBreakpoint();
-                    if(lastBreakpoint === currentBreakpoint){
-                        return;
-                    }
-                    lastBreakpoint = mediaQueries.topbarBreakpoint();
-
-                    topbar.removeClass('expanded');
-                    topbar.parent().removeClass('expanded');
-                    $scope.height = '';
-
-                    var sections = angular.element(topbar[0].querySelectorAll('section'));
-                    angular.forEach(sections, function(section){
-                        angular.element(section.querySelectorAll('li.moved')).removeClass('moved');
-                    });
-
-                    $scope.$apply();
-                 });
-
-                // update sticky positioning
-                angular.element($window).bind("scroll", function() {
-                    updateStickyPositioning();
-                    $scope.$apply();
-                });
-
-                $scope.$on('$destroy', function(){
-                    angular.element($window).unbind("scroll");
-                    angular.element($window).unbind("resize");
-                });
-
-                if (topbarContainer.hasClass('fixed')) {
-                    body.css('padding-top', $scope.originalHeight + 'px');
-                }
-
-            },
-            controller: ['$window', '$scope', 'closest', function($window, $scope, closest) {
-                $scope.settings = {};
-                $scope.settings.stickyClass = $scope.stickyClass || 'sticky';
-                $scope.settings.backText = $scope.backText || 'Back';
-                $scope.settings.stickyOn = $scope.stickyOn || 'all';
-
-                $scope.settings.customBackText = $scope.customBackText === undefined ? true : $scope.customBackText;
-                $scope.settings.isHover = $scope.isHover === undefined ? true : $scope.isHover;
-                $scope.settings.mobileShowParentLink = $scope.mobileShowParentLink === undefined ? true : $scope.mobileShowParentLink;
-                $scope.settings.scrolltop = $scope.scrolltop === undefined ? true : $scope.scrolltop; // jump to top when sticky nav menu toggle is clicked
-
-                this.settings = $scope.settings;
-
-                $scope.index = 0;
-
-                var outerHeight = function(el){
-                    var height = el.offsetHeight;
-                    var style = el.currentStyle || getComputedStyle(el);
-
-                    height += parseInt(style.marginTop, 10) + parseInt(style.marginBottom, 10);
-                    return height;
-                };
-
-
-                var sections = [];
-
-                this.addSection = function(section){
-                    sections.push(section);
-                };
-
-                this.removeSection = function(section){
-                    var index = sections.indexOf(section);
-                    if (index > -1) {
-                        sections.splice(index, 1);
-                    }
-                };
-
-                var dir = /rtl/i.test($document.find('html').attr('dir')) ? 'right' : 'left';
-
-                $scope.$watch('index', function(index){
-                    for(var i = 0; i < sections.length; i++){
-                        sections[i].move(dir, index);
-                    }
-                });
-
-                this.toggle = function(on){
-                    $scope.toggle(on);
-                    for(var i = 0; i < sections.length; i++){
-                        sections[i].reset();
-                    }
-                    $scope.index = 0;
-                    $scope.height = '';
-                    $scope.$apply();
-                };
-
-                this.back = function(event) {
-                    if($scope.index < 1 || !mediaQueries.topbarBreakpoint()){
-                        return;
-                    }
-
-                    var $link = angular.element(event.currentTarget);
-                    var $movedLi = closest($link, 'li.moved');
-                    var $previousLevelUl = $movedLi.parent();
-                    $scope.index = $scope.index -1;
-
-                    if($scope.index === 0){
-                        $scope.height = '';
-                    } else {
-                        $scope.height = $scope.originalHeight + outerHeight($previousLevelUl[0]);
-                    }
-
-                    $timeout(function () {
-                        $movedLi.removeClass('moved');
-                    }, 300);
-                };
-
-                this.forward = function(event) {
-                    if(!mediaQueries.topbarBreakpoint()){
-                        return false;
-                    }
-
-                    var $link = angular.element(event.currentTarget);
-                    var $selectedLi = closest($link, 'li');
-                    $selectedLi.addClass('moved');
-                    $scope.height = $scope.originalHeight + outerHeight($link.parent()[0].querySelector('ul'));
-                    $scope.index = $scope.index + 1;
-                    $scope.$apply();
-                };
-
-            }]
+        var isSticky = scope.isSticky = function() {
+          var sticky = topbarContainer.hasClass(scope.settings.stickyClass);
+          if (sticky && scope.settings.stickyOn === 'all') {
+            return true;
+          } else if (sticky && mediaQueries.small() && scope.settings.stickyOn === 'small') {
+            return true;
+          } else if (sticky && mediaQueries.medium() && scope.settings.stickyOn === 'medium') {
+            return true;
+          } else if (sticky && mediaQueries.large() && scope.settings.stickyOn === 'large') {
+            return true;
+          }
+          return false;
         };
-    }])
-    .directive('toggleTopBar', ['closest', function (closest) {
-        return {
-            scope: {},
-            require: '^topBar',
-            restrict: 'A',
-            replace: true,
-            templateUrl: 'template/topbar/toggle-top-bar.html',
-            transclude: true,
-            link: function ($scope, element, attrs, topBar) {
-                element.bind('click', function(event) {
-                    var li = closest(angular.element(event.currentTarget), 'li');
-                    if(!li.hasClass('back') && !li.hasClass('has-dropdown')) {
-                        topBar.toggle();
-                    }
-                });
 
-                $scope.$on('$destroy', function(){
-                    element.unbind('click');
-                });
+        var updateStickyPositioning = function() {
+          if (!scope.stickyTopbar || !scope.isSticky()) {
+            return;
+          }
+
+          var distance = stickyoffset;
+
+          if ($window.pageYOffset > distance && !topbarContainer.hasClass('fixed')) {
+            topbarContainer.addClass('fixed');
+            body.css('padding-top', scope.originalHeight + 'px');
+          } else if ($window.pageYOffset <= distance && topbarContainer.hasClass('fixed')) {
+            topbarContainer.removeClass('fixed');
+            body.css('padding-top', '');
+          }
+        };
+
+        var onResize = function() {
+          var currentBreakpoint = mediaQueries.topbarBreakpoint();
+          if(lastBreakpoint === currentBreakpoint){
+            return;
+          }
+          lastBreakpoint = mediaQueries.topbarBreakpoint();
+
+          topbar.removeClass('expanded');
+          topbar.parent().removeClass('expanded');
+          scope.height = '';
+
+          var sections = angular.element(topbar[0].querySelectorAll('section'));
+          angular.forEach(sections, function(section) {
+            angular.element(section.querySelectorAll('li.moved')).removeClass('moved');
+          });
+
+          scope.$apply();
+        };
+
+        var onScroll = function() {
+          updateStickyPositioning();
+          scope.$apply();
+        };
+
+        scope.toggle = function(on) {
+          if(!mediaQueries.topbarBreakpoint()){
+            return false;
+          }
+
+          var expand = (on === undefined) ? !topbar.hasClass('expanded') : on;
+
+          if (expand) {
+            topbar.addClass('expanded');
+          }
+          else {
+            topbar.removeClass('expanded');
+          }
+
+          if (scope.settings.scrolltop) {
+            if (!expand && topbar.hasClass('fixed')) {
+              topbar.parent().addClass('fixed');
+              topbar.removeClass('fixed');
+              body.css('padding-top', scope.originalHeight + 'px');
+            } else if (expand && topbar.parent().hasClass('fixed')) {
+              topbar.parent().removeClass('fixed');
+              topbar.addClass('fixed');
+              body.css('padding-top', '');
+              $window.scrollTo(0,0);
             }
-        };
-    }])
-    .directive('topBarSection', ['$compile', 'closest', function ($compile, closest) {
-        return {
-            scope: {},
-            require: '^topBar',
-            restrict: 'EA',
-            replace: true,
-            templateUrl: 'template/topbar/top-bar-section.html',
-            transclude: true,
-            link: function ($scope, element, attrs, topBar) {
-                var section = element;
-
-                $scope.reset = function(){
-                    angular.element(section[0].querySelectorAll('li.moved')).removeClass('moved');
-                };
-
-                $scope.move = function(dir, index){
-                    if(dir === 'left'){
-                        section.css({"left": index * -100 + '%'});
-                    }
-                    else {
-                        section.css({"right": index * -100 + '%'});
-                    }
-                };
-
-                topBar.addSection($scope);
-
-                $scope.$on("$destroy", function(){
-                    topBar.removeSection($scope);
-                });
-
-                // Top level links close menu on click
-                var links = section[0].querySelectorAll('li>a');
-                angular.forEach(links, function(link){
-                    var $link = angular.element(link);
-                    var li = closest($link, 'li');
-                    if(li.hasClass('has-dropdown') || li.hasClass('back') || li.hasClass('title')){
-                        return;
-                    }
-
-                    $link.bind('click', function(){
-                        topBar.toggle(false);
-                    });
-
-                    $scope.$on('$destroy', function(){
-                        $link.bind('click');
-                    });
-                });
-
+          } else {
+            if(isSticky()) {
+              topbar.parent().addClass('fixed');
             }
-        };
-    }])
-    .directive('hasDropdown', ['mediaQueries', function (mediaQueries) {
-        return {
-            scope: {},
-            require: '^topBar',
-            restrict: 'A',
-            templateUrl: 'template/topbar/has-dropdown.html',
-            replace: true,
-            transclude: true,
-            link: function ($scope, element, attrs, topBar) {
-                $scope.triggerLink = element.children('a')[0];
 
-                var $link = angular.element($scope.triggerLink);
-
-                $link.bind('click', function(event){
-                    topBar.forward(event);
-                });
-                $scope.$on('$destroy', function(){
-                    $link.unbind('click');
-                });
-
-                element.bind('mouseenter', function() {
-                    if(topBar.settings.isHover && !mediaQueries.topbarBreakpoint()){
-                        element.addClass('not-click');
-                    }
-                });
-                element.bind('click', function(event) {
-                    if(!topBar.settings.isHover && !mediaQueries.topbarBreakpoint()){
-                        element.toggleClass('not-click');
-                    }
-                });
-
-                element.bind('mouseleave', function() {
-                    element.removeClass('not-click');
-                });
-
-                $scope.$on('$destroy', function(){
-                    element.unbind('click');
-                    element.unbind('mouseenter');
-                    element.unbind('mouseleave');
-                });
-            },
-            controller: ['$window', '$scope', function($window, $scope) {
-                this.triggerLink = $scope.triggerLink;
-            }]
-        };
-    }])
-    .directive('topBarDropdown', ['$compile', function ($compile) {
-        return {
-            scope: {},
-            require: ['^topBar', '^hasDropdown'],
-            restrict: 'A',
-            replace: true,
-            templateUrl: 'template/topbar/top-bar-dropdown.html',
-            transclude: true,
-            link: function ($scope, element, attrs, ctrls) {
-
-                var topBar = ctrls[0];
-                var hasDropdown = ctrls[1];
-
-                var $link = angular.element(hasDropdown.triggerLink);
-                var url = $link.attr('href');
-
-                $scope.linkText = $link.text();
-
-                $scope.back = function(event){
-                    topBar.back(event);
-                };
-
-                // Add back link
-                if (topBar.settings.customBackText) {
-                    $scope.backText = topBar.settings.backText;
-                } else {
-                    $scope.backText = '&laquo; ' + $link.html();
-                }
-
-                var $titleLi;
-                if (topBar.settings.mobileShowParentLink && url && url.length > 1) {
-                    $titleLi = angular.element('<li class="title back js-generated">' +
-                        '<h5><a href="#" ng-click="back($event);">{{backText}}</a></h5></li>' +
-                        '<li><a class="parent-link js-generated" href="' +
-                        url + '">{{linkText}}</a></li>');
-                } else {
-                    $titleLi = angular.element('<li class="title back js-generated">' +
-                        '<h5><a href="" ng-click="back($event);">{{backText}}</a></h5></li>');
-                }
-
-                $compile($titleLi)($scope);
-                element.prepend($titleLi);
+            if(topbar.parent().hasClass('fixed')) {
+              if (!expand) {
+                topbar.removeClass('fixed');
+                topbar.parent().removeClass('expanded');
+                updateStickyPositioning();
+              } else {
+                topbar.addClass('fixed');
+                topbar.parent().addClass('expanded');
+                body.css('padding-top', scope.originalHeight + 'px');
+              }
             }
+          }
         };
-    }]);
+
+        if(topbarContainer.hasClass('fixed') || isSticky() ) {
+          scope.stickyTopbar = true;
+          scope.height = topbarContainer[0].offsetHeight;
+          var stickyoffset = topbarContainer[0].getBoundingClientRect().top + $window.pageYOffset;
+        } else {
+          scope.height = topbar[0].offsetHeight;
+        }
+
+        scope.originalHeight = scope.height;
+
+        scope.$watch('height', function(h) {
+          if(h){
+            topbar.css('height', h + 'px');
+          } else {
+            topbar.css('height', '');
+          }
+        });
+
+        angular.element($window).bind('resize', onResize);
+        angular.element($window).bind('scroll', onScroll);
+
+        scope.$on('$destroy', function() {
+          angular.element($window).unbind('scroll', onResize);
+          angular.element($window).unbind('resize', onScroll);
+        });
+
+        if (topbarContainer.hasClass('fixed')) {
+          body.css('padding-top', scope.originalHeight + 'px');
+        }
+      }
+    };
+  }]
+)
+.directive('toggleTopBar', ['closest', function (closest) {
+  return {
+    scope: {},
+    require: '^topBar',
+    restrict: 'A',
+    replace: true,
+    templateUrl: 'template/topbar/toggle-top-bar.html',
+    transclude: true,
+    link: function(scope, element, attrs, topBar) {
+      element.bind('click', function(event) {
+        var li = closest(angular.element(event.currentTarget), 'li');
+        if(!li.hasClass('back') && !li.hasClass('has-dropdown')) {
+          topBar.toggle();
+        }
+      });
+
+      scope.$on('$destroy', function() {
+        element.unbind('click');
+      });
+    }
+  };
+}])
+.directive('topBarSection', ['$compile', 'closest', function($compile, closest) {
+  return {
+    scope: {},
+    require: '^topBar',
+    restrict: 'EA',
+    replace: true,
+    templateUrl: 'template/topbar/top-bar-section.html',
+    transclude: true,
+    link: function(scope, element, attrs, topBar) {
+      var section = element;
+
+      scope.reset = function() {
+        angular.element(section[0].querySelectorAll('li.moved')).removeClass('moved');
+      };
+
+      scope.move = function(dir, index) {
+        if(dir === 'left'){
+          section.css({"left": index * -100 + '%'});
+        }
+        else {
+          section.css({"right": index * -100 + '%'});
+        }
+      };
+
+      topBar.addSection(scope);
+
+      scope.$on("$destroy", function() {
+        topBar.removeSection(scope);
+      });
+
+      // Top level links close menu on click
+      var links = section[0].querySelectorAll('li>a');
+      angular.forEach(links, function(link) {
+        var $link = angular.element(link);
+        var li = closest($link, 'li');
+        if (li.hasClass('has-dropdown') || li.hasClass('back') || li.hasClass('title')) {
+          return;
+        }
+
+        $link.bind('click', function() {
+          topBar.toggle(false);
+        });
+
+        scope.$on('$destroy', function() {
+          $link.bind('click');
+        });
+      });
+    }
+  };
+}])
+.directive('hasDropdown', ['mediaQueries', function (mediaQueries) {
+  return {
+    scope: {},
+    require: '^topBar',
+    restrict: 'A',
+    templateUrl: 'template/topbar/has-dropdown.html',
+    replace: true,
+    transclude: true,
+    link: function(scope, element, attrs, topBar) {
+      scope.triggerLink = element.children('a')[0];
+
+      var $link = angular.element(scope.triggerLink);
+
+      $link.bind('click', function(event) {
+        topBar.forward(event);
+      });
+      scope.$on('$destroy', function() {
+        $link.unbind('click');
+      });
+
+      element.bind('mouseenter', function() {
+        if(topBar.settings.isHover && !mediaQueries.topbarBreakpoint()){
+          element.addClass('not-click');
+        }
+      });
+      element.bind('click', function(event) {
+        if(!topBar.settings.isHover && !mediaQueries.topbarBreakpoint()){
+          element.toggleClass('not-click');
+        }
+      });
+
+      element.bind('mouseleave', function() {
+        element.removeClass('not-click');
+      });
+
+      scope.$on('$destroy', function() {
+        element.unbind('click');
+        element.unbind('mouseenter');
+        element.unbind('mouseleave');
+      });
+    },
+    controller: ['$window', '$scope', function($window, $scope) {
+      this.triggerLink = $scope.triggerLink;
+    }]
+  };
+}])
+.directive('topBarDropdown', ['$compile', function($compile) {
+  return {
+    scope: {},
+    require: ['^topBar', '^hasDropdown'],
+    restrict: 'A',
+    replace: true,
+    templateUrl: 'template/topbar/top-bar-dropdown.html',
+    transclude: true,
+    link: function(scope, element, attrs, ctrls) {
+      var topBar = ctrls[0];
+      var hasDropdown = ctrls[1];
+      var $link = angular.element(hasDropdown.triggerLink);
+      var url = $link.attr('href');
+      var $titleLi;
+
+      scope.linkText = $link.text();
+
+      scope.back = function(event) {
+        topBar.back(event);
+      };
+
+      // Add back link
+      if (topBar.settings.customBackText) {
+        scope.backText = topBar.settings.backText;
+      } else {
+        scope.backText = '&laquo; ' + $link.html();
+      }
+
+      if (topBar.settings.mobileShowParentLink && url && url.length > 1) {
+        $titleLi = angular.element('<li class="title back js-generated">' +
+            '<h5><a href="#" ng-click="back($event);">{{backText}}</a></h5></li>' +
+            '<li><a class="parent-link js-generated" href="' +
+            url + '">{{linkText}}</a></li>');
+      } else {
+        $titleLi = angular.element('<li class="title back js-generated">' +
+            '<h5><a href="" ng-click="back($event);">{{backText}}</a></h5></li>');
+      }
+
+      $compile($titleLi)(scope);
+      element.prepend($titleLi);
+    }
+  };
+}]);
 
 angular.module( 'mm.foundation.tour', [ 'mm.foundation.position', 'mm.foundation.tooltip' ] )
 
 .service( '$tour', [ '$window', function ( $window ) {
-  var currentIndex = getCurrentStep();
+  var currentIndex = getStoredCurrentStep();
   var ended = false;
   var steps = {};
 
-  function getCurrentStep() {
-    return parseInt( $window.localStorage.getItem( 'mm.tour.step' ), 10 );
+  function getStoredCurrentStep() {
+    try {
+      return parseInt( $window.localStorage.getItem( 'mm.tour.step' ), 10 );
+    } catch(e) {
+      if (e.name !== "SecurityError") {
+        throw e;
+      }
+    }
+  }
+
+  function storeCurrentStep() {
+    try {
+      $window.localStorage.setItem( 'mm.tour.step', currentIndex );
+    } catch(e) {
+      if (e.name !== "SecurityError") {
+        throw e;
+      }
+    }
   }
 
   function setCurrentStep(step) {
     currentIndex = step;
-    $window.localStorage.setItem( 'mm.tour.step', step );
+    storeCurrentStep();
   }
 
   this.add = function ( index, attrs ) {
@@ -2900,6 +3014,8 @@ angular.module( 'mm.foundation.tour', [ 'mm.foundation.position', 'mm.foundation
         element.remove();
         $tour.next();
       };
+
+      scope.$on('$locationChangeSuccess', scope.endTour);
     }
   };
 }])
@@ -2931,7 +3047,7 @@ angular.module( 'mm.foundation.tour', [ 'mm.foundation.position', 'mm.foundation
         return true;
       }
     }
-    
+
     return false;
   }
 
@@ -3068,10 +3184,10 @@ angular.module('mm.foundation.typeahead', ['mm.foundation.position', 'mm.foundat
             } else {
               resetMatches();
             }
-            isLoadingSetter(originalScope, false);
           }
         }, function(){
           resetMatches();
+        }).finally(function() {
           isLoadingSetter(originalScope, false);
         });
       };
